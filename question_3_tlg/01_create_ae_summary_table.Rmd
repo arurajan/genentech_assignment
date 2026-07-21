@@ -1,0 +1,50 @@
+---
+title: "genentech_assignment_q3a"
+author: "Arundhati Rajan"
+date: "2026-07-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(cards)
+library(gtsummary)
+library(gt)
+
+#loading required datasets
+adsl <- pharmaverseadam::adsl
+adae <- pharmaverseadam::adae 
+
+
+tbl <- adae |>
+  filter(TRTEMFL == "Y") |> #filters observations by TRTEMFL=Y to identify treatment emergent AE records
+  tbl_hierarchical(
+    variables   = c(AESOC,AETERM), #the hierarchical table groups data in order of the variables specified here
+    by          = ACTARM, #splits the table by treatment group, giving each group its own column
+    id          = USUBJID, #counts unique subjects
+    denominator = adsl, #uses number of subjects in the ADSL dataset as the denominator for calculating percentage values
+    overall = TRUE, #creates an overall summary column in the table
+    label       = "..ard_hierarchical_overall.." ~ "Treatment Emergent AEs"
+  ) |>
+  add_overall(last = TRUE) |>
+  sort_hierarchical() |> #default way of sorting is in descending order
+  bold_labels() |>
+  modify_header(all_stat_cols() ~ "**{level}**  \nN = {n}")  #formatting the header name for all columns to display level and number of subjects in that group level
+
+tbl
+gt_tbl <- as_gt(tbl)
+gtsave(
+  data = gt_tbl,
+  filename = "/Users/arurajan/Documents/genentech_assignment/ae_summary_table.pdf"
+)
+```
+```{r}
+#obtained log file by running the following commands in the terminal:
+#cd /Users/arurajan/Documents/genentech_assignment
+# Rscript -e "rmarkdown::render('01_create_ae_summary_table.Rmd')" > 01_create_ae_summary_table.log 2>&1
+```
+

@@ -1,0 +1,123 @@
+---
+title: "genentech_assignment_q3b"
+author: "Arundhati Rajan"
+date: "2026-07-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(pharmaverseadam)
+library(binom)
+library(forcats)
+library(scales)
+
+#loading the required dataset
+adae <- pharmaverseadam::adae
+
+######################################################################################################################
+#Q3.1. AE Severity Distribution Bar Chart
+######################################################################################################################
+
+ae_severity_count <- adae %>%
+  filter(!is.na(AESEV)) %>% #excluding observations where AESEV is missing
+  count(ACTARM, AESEV) # counting events by treatment arm and severity
+
+#code for the creation of the stacked chart- have used ggplot function
+p1 <- ggplot(ae_severity_count, aes(x = ACTARM, y = n, fill = AESEV)) +
+  geom_col(position = "stack", width = 0.7) +
+  scale_fill_brewer(
+    palette = "Dark2", #color-blind friendly palette
+    name = "Severity"
+  ) +
+  labs(
+    title = "AE Severity Distribution by Treatment",
+    x = "Treatment Arm",
+    y = "Count of AEs"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+
+    panel.grid.major = element_line(color = "grey90", linewidth = 0.4),
+    panel.grid.minor = element_blank(),
+
+    axis.line = element_line(color = "black", linewidth = 0.5),
+
+    axis.title.x = element_text(margin = margin(t = 12)),
+    axis.title.y = element_text(margin = margin(r = 12)),
+    axis.text.x = element_text(margin = margin(t = 6)),
+    axis.text.y = element_text(margin = margin(r = 6)),
+
+    legend.title = element_text(face = "bold"),
+    panel.border = element_blank()
+  )
+
+ggsave("/Users/arurajan/Documents/genentech_assignment/ae_severity_barchart.png", plot = p1)
+
+######################################################################################################################
+#Q3.2. Top 10 AEs
+######################################################################################################################
+
+
+top_ae <- adae %>%
+  distinct(USUBJID,AETERM) %>%
+  count(AETERM) %>% #counting AE once per subject
+  arrange(desc(n)) %>% 
+  slice_head(n = 10) #extracting 10 most frequent adverse events
+
+ci <- binom.confint(top_ae$n, n_distinct(adae$USUBJID), methods = "exact") # calculating 95% Clopper-Pearson confidence intervals for AE proportions
+
+top_ae <- top_ae %>%
+  mutate(
+    prop   = n/n_distinct(adae$USUBJID),
+    lower  = ci$lower,
+    upper  = ci$upper,
+    AETERM = fct_reorder(AETERM, prop) #reordering AE terms by frequency for plotting purposes
+  )
+
+#code for the creation of the plots- have used ggplot function
+p2 <- ggplot(top_ae, aes(x = prop, y = AETERM)) +
+  geom_point(size = 3) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2) +
+  scale_x_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Top 10 Most Frequent Adverse Events",
+    subtitle = paste0("n = ", n_distinct(adae$USUBJID), " subjects; 95% Clopper-Pearson CIs"),
+    x = "Percentage of Patients (%)",
+    y = NULL
+  ) +
+  theme_minimal()+
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+      panel.border = element_rect(
+      colour = "black",
+      fill = NA,
+      linewidth = 0.8
+    )
+  )
+
+ggsave("/Users/arurajan/Documents/genentech_assignment/top10ae_graph.png", plot = p2)
+```
+
+```{r}
+#reviewing output in console to identify any issues 
+p1
+p2
+```
+```{r}
+#obtained log file by running the following commands in the terminal:
+#cd /Users/arurajan/Documents/genentech_assignment
+# Rscript -e "rmarkdown::render('02_create_visualizations.Rmd')" > 02_create_visualizations.log 2>&1
+```
+
+
+
+
