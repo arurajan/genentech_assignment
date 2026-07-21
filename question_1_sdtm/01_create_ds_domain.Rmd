@@ -1,0 +1,182 @@
+---
+title: "genentech_assignment"
+author: "Arundhati Rajan"
+date: "2026-07-15"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+######################################################################################################################
+#Q1. need to create an error-free program with good documentation that will create the DS domain with the following 
+# variables: STUDYID, DOMAIN, USUBJID, DSSEQ, DSTERM, DSDECOD, DSCAT, VISITNUM, VISIT, DSDTC, DSSTDTC, DSSTDY 
+######################################################################################################################
+
+#loading required packages
+library(dplyr)
+library(sdtm.oak)
+library(pharmaverseraw)
+library(pharmaversesdtm)
+```
+
+```{r}
+# loading required datasets
+
+study_ct<-read.csv("/Users/arurajan/Documents/genentech_assignment/sdtm_ct.csv")  #study control terminology
+ds_raw<-pharmaverseraw::ds_raw #raw clinical data
+dm <- pharmaversesdtm::dm #DM domain
+```
+
+```{r}
+#creating oak_id_vars
+
+ds_raw <- ds_raw %>%
+  generate_oak_id_vars(
+    pat_var = "PATNUM",
+    raw_src = "ds_raw"
+  )
+```
+
+```{r}
+#mapping topic variable: in this case, the topic variable is DSTERM (has been identified using the SDTMIG pdf. file available on the CDISC website. This is mapped using assign_no_ct function (the topic variable doesn't involve any controlled terminology)
+
+ds <- assign_no_ct(
+    raw_dat = ds_raw,
+    raw_var = "IT.DSTERM",
+    tgt_var = "DSTERM",
+    id_vars = oak_id_vars()
+  )%>% assign_no_ct(
+    raw_dat = condition_add(ds_raw,!is.na(OTHERSP)),
+    raw_var = "OTHERSP",
+    tgt_var = "DSTERM",
+    id_vars = oak_id_vars()
+  )
+
+```
+
+```{r}
+#mapping other variables according to the eCRF provided
+
+ds<- ds%>%      
+  assign_datetime( #DSSTDTC has been created as specified by the programming notes. The date is in the ISO8601 format.
+  raw_dat= ds_raw,
+  raw_var= "IT.DSSTDAT",
+  tgt_var= "DSSTDTC",
+  raw_fmt = "mm-dd-yyyy",
+  id_vars=oak_id_vars()
+)%>%
+    assign_ct( #The DSDECOD variable involves controlled terminology, hence the assign_ct function is used
+     #The condition_add function allows filtering of the source data and ensures that the mapping is applied if the condition is met 
+    raw_dat = condition_add(ds_raw,is.na(OTHERSP)),
+    raw_var = "IT.DSDECOD",
+    tgt_var = "DSDECOD",
+    ct_spec = study_ct,
+    ct_clst = "C66727", 
+    id_vars = oak_id_vars()
+  ) %>%
+    assign_no_ct(
+    raw_dat = condition_add(ds_raw,!is.na(OTHERSP)),
+    raw_var = "OTHERSP",
+    tgt_var = "DSDECOD",
+    id_vars = oak_id_vars()
+  )%>%
+  #DSCAT is being created here. The hardcode_no_ct function is used when the target SDTM variable has no terminology restrictions and needs to be hard coded 
+    hardcode_no_ct( 
+    raw_dat = condition_add(ds_raw,IT.DSDECOD=="Randomized" & is.na(OTHERSP)),
+    raw_var = "IT.DSDECOD",
+    tgt_var = "DSCAT",
+    tgt_val = "PROTOCOL MILESTONE",
+    id_vars = oak_id_vars()
+  )%>%
+    hardcode_no_ct(
+    raw_dat = condition_add(ds_raw,IT.DSDECOD!="Randomized" & is.na(OTHERSP)),
+    raw_var = "IT.DSDECOD",
+    tgt_var = "DSCAT",
+    tgt_val = "DISPOSITION EVENT",
+    id_vars = oak_id_vars()
+  )%>%
+   hardcode_no_ct(
+    raw_dat = condition_add(ds_raw,!is.na(OTHERSP)),
+    raw_var = "OTHERSP",
+    tgt_var = "DSCAT",
+    tgt_val = "OTHER EVENT",
+    id_vars = oak_id_vars()
+  )%>% 
+  #creation of date variable DSDTC
+ assign_datetime(
+  raw_dat = ds_raw,
+  raw_var = c("DSDTCOL", "DSTMCOL"),
+  tgt_var = "DSDTC",
+  raw_fmt = c("mm-dd-yyyy","H:M"),
+   id_vars = oak_id_vars()
+)%>%
+  #Creation of VISITNUM- INSTANCE was identified as the appropriate raw variable
+  assign_ct(
+    raw_dat = ds_raw,
+    raw_var = "INSTANCE",
+    tgt_var = "VISITNUM",
+    ct_spec = study_ct,
+    ct_clst = "VISITNUM",
+    id_vars = oak_id_vars()
+  ) %>%
+  #Creation of VISIT
+  assign_ct(
+    raw_dat = ds_raw,
+    raw_var = "INSTANCE",
+    tgt_var = "VISIT",
+    ct_spec = study_ct,
+    ct_clst = "VISIT",
+    id_vars = oak_id_vars()
+  )
+ 
+```
+```{r}
+#Remaining variables STUDYID, DOMAIN, USUBJID have been defined. DSTERM and DSDECOD were converted to upper case to adhere to standards
+ds <- ds %>%
+  dplyr::mutate(
+    STUDYID = ds_raw$STUDY,
+    DOMAIN = "DS",
+    USUBJID = paste0("01-", ds_raw$PATNUM),
+    DSTERM = toupper(DSTERM),
+    DSDECOD = toupper(DSDECOD)
+  )%>%
+  derive_seq( #DSSEQ is being derived here 
+    tgt_var  = "DSSEQ",
+    rec_vars = c("USUBJID")
+  ) %>%
+  derive_study_day( #DSSTDY is being derived here 
+    sdtm_in       = .,
+    dm_domain     = dm,
+    tgdt          = "DSSTDTC",
+    refdt         = "RFSTDTC",
+    study_day_var = "DSSTDY"
+  )%>%
+  select( #dataset columns being arranged in the order of occurrence of variables in the question 
+    STUDYID, DOMAIN, USUBJID, DSSEQ,
+    DSTERM, DSDECOD, DSCAT,
+    VISITNUM, VISIT,
+    DSDTC, DSSTDTC, DSSTDY
+  ) %>%
+  arrange(USUBJID, DSSEQ)
+```
+
+```{r}
+#saving dataset in .csv format
+write.csv(ds,"/Users/arurajan/Documents/genentech_assignment/ds.csv")
+
+```
+
+
+```{r}
+#obtained log file by running the following commands in the terminal:
+#cd /Users/arurajan/Documents/genentech_assignment
+# Rscript -e "rmarkdown::render('01_create_ds_domain.Rmd')" > 01_create_ds_domain.log 2>&1
+```
+
+
+
+
